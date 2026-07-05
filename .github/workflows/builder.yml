@@ -130,7 +130,7 @@ jobs:
             https://github.com/${{ env.ASEPRITE_REPO }}
 
       # ============================================================
-      # 使用 Python 修改版本号（避免 sed 转义问题）
+      # 使用 Python 修改版本号（使用 YAML 多行字符串语法）
       # ============================================================
       - name: Set version number
         working-directory: aseprite
@@ -140,15 +140,15 @@ jobs:
           CLEAN_VERSION=${RAW_VERSION#v}
           echo "Setting version to: $CLEAN_VERSION"
           if [ -f "src/ver/CMakeLists.txt" ]; then
-            python3 -c "
-import re
-with open('src/ver/CMakeLists.txt', 'r') as f:
-    content = f.read()
-content = re.sub(r'set\(VERSION \".*\"\)', 'set(VERSION \"$CLEAN_VERSION\")', content)
-with open('src/ver/CMakeLists.txt', 'w') as f:
-    f.write(content)
-print('✓ Modified src/ver/CMakeLists.txt')
-"
+            python3 << 'EOF'
+          import re
+          with open('src/ver/CMakeLists.txt', 'r') as f:
+              content = f.read()
+          content = re.sub(r'set\(VERSION ".*"\)', 'set(VERSION "'"$CLEAN_VERSION"'")', content)
+          with open('src/ver/CMakeLists.txt', 'w') as f:
+              f.write(content)
+          print("✓ Modified src/ver/CMakeLists.txt")
+          EOF
             echo "Version line after modification:"
             grep "set(VERSION" src/ver/CMakeLists.txt || echo "⚠ Version line not found"
           else
