@@ -129,6 +129,9 @@ jobs:
             --branch ${{ needs.fetch-aseprite-info.outputs.release-tag }} \
             https://github.com/${{ env.ASEPRITE_REPO }}
 
+      # ============================================================
+      # 设置版本号（macOS / Linux / Windows 兼容）
+      # ============================================================
       - name: Set version number
         working-directory: aseprite
         shell: bash
@@ -137,7 +140,11 @@ jobs:
           CLEAN_VERSION=${RAW_VERSION#v}
           echo "Setting version to: $CLEAN_VERSION"
           if [ -f "src/ver/CMakeLists.txt" ]; then
-            sed -i "s/set(VERSION \".*\")/set(VERSION \"$CLEAN_VERSION\")/" src/ver/CMakeLists.txt
+            if [[ "${{ runner.os }}" == "macOS" ]]; then
+              sed -i '' "s/set(VERSION \".*\")/set(VERSION \"$CLEAN_VERSION\")/" src/ver/CMakeLists.txt
+            else
+              sed -i "s/set(VERSION \".*\")/set(VERSION \"$CLEAN_VERSION\")/" src/ver/CMakeLists.txt
+            fi
             echo "[OK] Modified src/ver/CMakeLists.txt"
             echo "Version line after modification:"
             grep "set(VERSION" src/ver/CMakeLists.txt || echo "[WARN] Version line not found"
