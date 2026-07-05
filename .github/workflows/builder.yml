@@ -281,12 +281,17 @@ jobs:
         shell: bash
         run: |
           echo "Downloading OpenSSL DLL..."
-          curl -sL -o openssl.zip https://github.com/openssl/openssl/releases/download/openssl-3.0.13/openssl-3.0.13-x64.zip
-          unzip -q openssl.zip
-          cp x64/bin/*.dll . 2>/dev/null || true
-          rm -rf x64 openssl.zip
+          # 使用 slproweb.com 的 OpenSSL 二进制文件（包含所有必要的 DLL）
+          curl -sL -o openssl.exe https://slproweb.com/download/Win64OpenSSL-3.3.3.exe
+          # 解压安装程序（使用 7z）
+          7z x -y openssl.exe -oopenssl_temp
+          # 复制所有 DLL 文件到当前目录
+          cp openssl_temp/*.dll . 2>/dev/null || true
+          cp openssl_temp/system32/*.dll . 2>/dev/null || true
+          # 清理临时文件
+          rm -rf openssl_temp openssl.exe
           echo "DLL files in build/bin:"
-          ls -la *.dll 2>/dev/null || echo "No DLL files"
+          ls -la *.dll 2>/dev/null || echo "No DLL files found"
 
       - name: Create release package
         working-directory: aseprite/build/bin
