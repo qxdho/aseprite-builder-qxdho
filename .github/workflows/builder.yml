@@ -1,3 +1,13 @@
+# ============================================================================
+# GitHub Actions 工作流：自动构建并发布 Aseprite
+# 
+# 功能说明：
+# 1. 自动获取 Aseprite 官方最新 Release 版本
+# 2. 在 GitHub Releases 中创建对应的发布页面
+# 3. 跨平台编译 Windows/Linux/macOS 版本的 Aseprite
+# 4. 自动打包并上传到 Release 附件
+# ============================================================================
+
 name: Build and release Aseprite
 
 on:
@@ -125,6 +135,9 @@ jobs:
             --branch ${{ needs.fetch-aseprite-info.outputs.release-tag }} \
             https://github.com/${{ env.ASEPRITE_REPO }}
 
+      # ============================================================
+      # 核心修复：使用 sed 的 c 命令替换整行，避免转义问题
+      # ============================================================
       - name: Set version number
         working-directory: aseprite
         shell: bash
@@ -133,8 +146,11 @@ jobs:
           CLEAN_VERSION=${RAW_VERSION#v}
           echo "Setting version to: $CLEAN_VERSION"
           if [ -f "src/ver/CMakeLists.txt" ]; then
-            sed -i "s/set(VERSION \".*\")/set(VERSION \"$CLEAN_VERSION\")/" src/ver/CMakeLists.txt
+            # 使用 c 命令替换整行，完全避免正则表达式转义问题
+            sed -i "/^[[:space:]]*set(VERSION /c\set(VERSION \"$CLEAN_VERSION\")" src/ver/CMakeLists.txt
             echo "✓ Modified src/ver/CMakeLists.txt"
+            echo "Version line after modification:"
+            grep "set(VERSION" src/ver/CMakeLists.txt || echo "⚠ Version line not found"
           else
             echo "⚠ Warning: src/ver/CMakeLists.txt not found"
             exit 1
@@ -166,7 +182,7 @@ jobs:
           SKIA_VER="${{ steps.skia-info.outputs.skia_version }}"
           SKIA_URL="https://github.com/aseprite/skia/releases/download/${SKIA_VER}/${{ matrix.skia_url }}"
           if [ ! -d "skia" ] || [ -z "$(ls -A skia)" ]; then
-            echo "Downloading Skia..."
+            echo "Downloading Skia from: $SKIA_URL"
             if [[ "${{ runner.os }}" == "Windows" ]]; then
               choco install wget -y --no-progress
             fi
@@ -215,6 +231,7 @@ jobs:
           if [[ -n "${{ matrix.cmake_extra }}" ]]; then
             CMAKE_CMD="$CMAKE_CMD ${{ matrix.cmake_extra }}"
           fi
+          echo "Running CMake..."
           eval $CMAKE_CMD
 
       - name: Compiling
@@ -272,8 +289,8 @@ jobs:
           unzip -q openssl.zip
           cp x64/bin/*.dll . 2>/dev/null || true
           rm -rf x64 openssl.zip
-          echo "DLL files:"
-          ls -la *.dll 2>/dev/null || echo "No DLLs"
+          echo "DLL files in build/bin:"
+          ls -la *.dll 2>/dev/null || echo "No DLL files"
 
       - name: Create release package
         working-directory: aseprite/build/bin
