@@ -129,9 +129,6 @@ jobs:
             --branch ${{ needs.fetch-aseprite-info.outputs.release-tag }} \
             https://github.com/${{ env.ASEPRITE_REPO }}
 
-      # ============================================================
-      # 设置版本号（macOS / Linux / Windows 兼容）
-      # ============================================================
       - name: Set version number
         working-directory: aseprite
         shell: bash
@@ -236,7 +233,9 @@ jobs:
         shell: bash
         run: |
           cd build
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            CORES=$(sysctl -n hw.ncpu)
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
             CORES=$(nproc 2>/dev/null || echo 4)
           else
             CORES=$(nproc)
