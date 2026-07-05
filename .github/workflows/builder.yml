@@ -137,18 +137,8 @@ jobs:
           CLEAN_VERSION=${RAW_VERSION#v}
           echo "Setting version to: $CLEAN_VERSION"
           if [ -f "src/ver/CMakeLists.txt" ]; then
-            python3 << 'EOF'
-        import re
-        import sys
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-        with open('src/ver/CMakeLists.txt', 'r', encoding='utf-8') as f:
-            content = f.read()
-        content = re.sub(r'set\(VERSION ".*"\)', 'set(VERSION "' + "$CLEAN_VERSION" + '")', content)
-        with open('src/ver/CMakeLists.txt', 'w', encoding='utf-8') as f:
-            f.write(content)
-        print("[OK] Modified src/ver/CMakeLists.txt")
-        EOF
+            sed -i "s/set(VERSION \".*\")/set(VERSION \"$CLEAN_VERSION\")/" src/ver/CMakeLists.txt
+            echo "[OK] Modified src/ver/CMakeLists.txt"
             echo "Version line after modification:"
             grep "set(VERSION" src/ver/CMakeLists.txt || echo "[WARN] Version line not found"
           else
