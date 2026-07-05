@@ -48,15 +48,12 @@ jobs:
         shell: bash
         run: |
           # 使用 GitHub API 获取最新 Release 信息
-          # -s: 静默模式，不显示进度条
           RESPONSE=$(curl -s https://api.github.com/repos/${{ env.ASEPRITE_REPO }}/releases/latest)
           
           # 使用 jq 解析 JSON，提取 Tag 名称
-          # -r: 输出原始字符串（不带引号）
           TAG=$(echo "$RESPONSE" | jq -r '.tag_name')
           
           # 提取 Source.zip 格式的下载链接
-          # test("Aseprite-.*?-Source.zip"): 正则匹配文件名
           DOWNLOAD_URL=$(echo "$RESPONSE" | jq -r '.assets[] | select(.name | test("Aseprite-.*?-Source.zip")) | .browser_download_url')
           
           # 将结果写入 GITHUB_OUTPUT，供后续步骤使用
@@ -126,15 +123,13 @@ jobs:
             skia_arch: x64                              # Skia 架构
             platform_name: Windows                      # 平台显示名称
             exe_name: aseprite.exe                      # 可执行文件名
-            # Windows 特定 CMake 参数
-            # -T ClangCL: 使用 Visual Studio 的 Clang 工具链
-            cmake_extra: "-T ClangCL"
-            # macOS 部署目标（Windows 不需要）
-            osx_deployment: ""
-            # macOS 系统根目录（Windows 不需要）
-            osx_sysroot: ""
-            # macOS 架构（Windows 不需要）
-            osx_arch: ""
+            # Windows 使用 Ninja 生成器（默认 MSVC 编译器）
+            # 注意：不要使用 -T ClangCL，Ninja 不支持
+            generator: Ninja
+            cmake_extra: ""
+            osx_deployment: ""                          # macOS 部署目标（Windows 不需要）
+            osx_sysroot: ""                             # macOS 系统根目录（Windows 不需要）
+            osx_arch: ""                                # macOS 架构（Windows 不需要）
 
           # ---------- Linux 平台 ----------
           # 支持：Ubuntu Focal Fossa 20.04 + clang 12
@@ -144,6 +139,7 @@ jobs:
             skia_arch: x64
             platform_name: Linux
             exe_name: aseprite
+            generator: Ninja
             # Linux 特定参数：必须使用 libstdc++ 以兼容预编译的 Skia
             # 参考：INSTALL.md "Linux details" 章节
             cmake_extra: "-DCMAKE_CXX_FLAGS:STRING=-stdlib=libstdc++ -DCMAKE_EXE_LINKER_FLAGS:STRING=-stdlib=libstdc++"
@@ -159,6 +155,7 @@ jobs:
             skia_arch: arm64
             platform_name: macOS
             exe_name: aseprite
+            generator: Ninja
             # macOS 特定参数
             # 参考：INSTALL.md "Apple Silicon" 章节
             cmake_extra: "-DPNG_ARM_NEON:STRING=on"
@@ -217,6 +214,7 @@ jobs:
       # 步骤 4：设置版本号
       # 修改 src/ver/CMakeLists.txt 中的版本号，替换 "1.x-dev"
       # 参考：src/ver/CMakeLists.txt 中的 set(VERSION "1.x-dev")
+      # 注意：使用 | 作为 sed 分隔符，避免版本号中的 . 造成转义问题
       # ------------------------------------------------------------------------
       - name: Set version number
         working-directory: aseprite
@@ -230,11 +228,17 @@ jobs:
           
           # 修改 src/ver/CMakeLists.txt 中的 VERSION 定义
           # 将 set(VERSION "1.x-dev") 替换为 set(VERSION "1.3.17")
+          # 使用 | 作为分隔符，避免版本号中的 . 造成问题
           if [ -f "src/ver/CMakeLists.txt" ]; then
-            sed -i "s/set(VERSION \".*\")/set(VERSION \"$CLEAN_VERSION\")/" src/ver/CMakeLists.txt
+            sed -i 's|set(VERSION ".*")|set(VERSION "'"$CLEAN_VERSION"'")|' src/ver/CMakeLists.txt
             echo "✓ Modified src/ver/CMakeLists.txt"
+            
+            # 验证修改结果
+            echo "Version line after modification:"
+            grep "set(VERSION" src/ver/CMakeLists.txt || echo "⚠ Version line not found"
           else
             echo "⚠ Warning: src/ver/CMakeLists.txt not found"
+            exit 1
           fi
           
           # 保存纯净版本号供后续步骤使用
@@ -251,14 +255,11 @@ jobs:
         run: |
           if [ -f "INSTALL.md" ]; then
             # 提取 aseprite-mXXX 格式的分支名
-            # grep -oP: 使用 Perl 正则表达式提取匹配内容
             SKIA_BRANCH=$(grep -oP 'aseprite-m\d+' INSTALL.md | head -1)
             echo "skia_branch=$SKIA_BRANCH" >> $GITHUB_OUTPUT
             
             # 将分支名映射到实际的 Release 版本号
             # 例如：aseprite-m124 -> m124-08a5439a6b
-            # 注意：这些哈希值来自 Skia 仓库的 Release 页面
-            # https://github.com/aseprite/skia/releases
             case "$SKIA_BRANCH" in
               "aseprite-m124")
                 SKIA_VERSION="m124-08a5439a6b"
@@ -276,7 +277,7 @@ jobs:
             echo "skia_version=$SKIA_VERSION" >> $GITHUB_OUTPUT
             echo "✓ Found Skia: $SKIA_BRANCH -> $SKIA_VERSION"
           else
-            # 如果 INSTALL.md 不存在（理论上不应该），使用默认版本
+            # 如果 INSTALL.md 不存在，使用默认版本
             echo "skia_branch=aseprite-m124" >> $GITHUB_OUTPUT
             echo "skia_version=m124-08a5439a6b" >> $GITHUB_OUTPUT
             echo "⚠ INSTALL.md not found, using default Skia version"
@@ -286,9 +287,10 @@ jobs:
       # ------------------------------------------------------------------------
       # 步骤 6：缓存 Skia 库
       # 加速后续构建，避免重复下载
+      # 使用 actions/cache@v4 支持 Node.js 24
       # ------------------------------------------------------------------------
       - name: Cache Skia
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: aseprite/skia                          # 缓存目录
           # 缓存键：平台 + Skia 版本
@@ -307,7 +309,6 @@ jobs:
         run: |
           SKIA_VER="${{ steps.skia-info.outputs.skia_version }}"
           # 构建下载 URL
-          # 格式：https://github.com/aseprite/skia/releases/download/m124-xxx/Skia-Windows-Release-x64.zip
           SKIA_URL="https://github.com/aseprite/skia/releases/download/${SKIA_VER}/${{ matrix.skia_url }}"
           
           # 如果缓存目录为空，则下载
@@ -320,7 +321,6 @@ jobs:
             fi
             
             # 下载并解压到 skia 目录
-            # -q: 静默模式，减少日志输出
             wget -q "$SKIA_URL"
             unzip -q *.zip -d skia
             rm *.zip
@@ -342,12 +342,12 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
         with:
-          # 使用 64 位架构
           arch: x64
 
       # ------------------------------------------------------------------------
       # 步骤 10：生成 Makefiles（CMake 配置）
       # 参考：INSTALL.md "Manual Building" 章节
+      # 注意：Windows 使用 Ninja 生成器，不要使用 -T ClangCL
       # ------------------------------------------------------------------------
       - name: Generating Makefiles
         working-directory: aseprite
@@ -369,8 +369,8 @@ jobs:
           # 构建 CMake 命令
           # -S .: 源码目录
           # -B build: 构建目录
-          # -G Ninja: 使用 Ninja 生成器
-          CMAKE_CMD="cmake -S . -B build -G Ninja \
+          # -G ${{ matrix.generator }}: 使用矩阵中定义的生成器
+          CMAKE_CMD="cmake -S . -B build -G ${{ matrix.generator }} \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DENABLE_TESTS=OFF \
             -DENABLE_SCRIPTING=$enable_scripting \
@@ -395,14 +395,17 @@ jobs:
           fi
           
           # 执行 CMake 配置
+          echo "Running CMake with command:"
+          echo "$CMAKE_CMD"
           eval $CMAKE_CMD
 
       # ------------------------------------------------------------------------
       # 步骤 11：缓存 Ninja 构建产物
       # 加速后续增量编译
+      # 使用 actions/cache@v4 支持 Node.js 24
       # ------------------------------------------------------------------------
       - name: Cache Ninja build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: aseprite/build
           key: build-${{ matrix.platform_name }}-${{ github.sha }}
@@ -501,7 +504,7 @@ jobs:
 
       # ------------------------------------------------------------------------
       # 步骤 17：上传到 GitHub Release
-      # 使用 svenstaro/upload-release-action 上传附件
+      # 使用 svenstaro/upload-release-action@v2 上传附件
       # ------------------------------------------------------------------------
       - name: Upload release asset
         uses: svenstaro/upload-release-action@v2
@@ -510,16 +513,15 @@ jobs:
           file: aseprite/build/bin/${{ steps.package.outputs.package_name }}
           asset_name: ${{ steps.package.outputs.package_name }}
           tag: ${{ needs.fetch-aseprite-info.outputs.release-tag }}
-          # overwrite: true  # 如果同名文件已存在则覆盖
 
       # ------------------------------------------------------------------------
       # 步骤 18：构建失败通知
       # 在 Issue #1 中创建评论通知构建失败
-      # 参考：GitHub Actions 的 github-script Action
+      # 使用 actions/github-script@v7 支持 Node.js 24
       # ------------------------------------------------------------------------
       - name: Notify on failure
         if: failure()               # 只有在上一步失败时才执行
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
           script: |
             // 尝试获取 Issue #1
