@@ -1,11 +1,5 @@
 # ============================================================================
 # GitHub Actions 工作流：自动构建并发布 Aseprite
-# 
-# 功能说明：
-# 1. 自动获取 Aseprite 官方最新 Release 版本
-# 2. 在 GitHub Releases 中创建对应的发布页面
-# 3. 跨平台编译 Windows/Linux/macOS 版本的 Aseprite
-# 4. 自动打包并上传到 Release 附件
 # ============================================================================
 
 name: Build and release Aseprite
@@ -136,7 +130,7 @@ jobs:
             https://github.com/${{ env.ASEPRITE_REPO }}
 
       # ============================================================
-      # 核心修复：使用 sed 的 c 命令替换整行，避免转义问题
+      # 使用 Python 修改版本号（避免 sed 转义问题）
       # ============================================================
       - name: Set version number
         working-directory: aseprite
@@ -146,9 +140,15 @@ jobs:
           CLEAN_VERSION=${RAW_VERSION#v}
           echo "Setting version to: $CLEAN_VERSION"
           if [ -f "src/ver/CMakeLists.txt" ]; then
-            # 使用 c 命令替换整行，完全避免正则表达式转义问题
-            sed -i "/^[[:space:]]*set(VERSION /c\set(VERSION \"$CLEAN_VERSION\")" src/ver/CMakeLists.txt
-            echo "✓ Modified src/ver/CMakeLists.txt"
+            python3 -c "
+import re
+with open('src/ver/CMakeLists.txt', 'r') as f:
+    content = f.read()
+content = re.sub(r'set\(VERSION \".*\"\)', 'set(VERSION \"$CLEAN_VERSION\")', content)
+with open('src/ver/CMakeLists.txt', 'w') as f:
+    f.write(content)
+print('✓ Modified src/ver/CMakeLists.txt')
+"
             echo "Version line after modification:"
             grep "set(VERSION" src/ver/CMakeLists.txt || echo "⚠ Version line not found"
           else
