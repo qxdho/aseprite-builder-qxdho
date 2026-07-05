@@ -33,7 +33,7 @@ jobs:
           DOWNLOAD_URL=$(echo "$RESPONSE" | jq -r '.assets[] | select(.name | test("Aseprite-.*?-Source.zip")) | .browser_download_url')
           echo "release-tag=$TAG" >> $GITHUB_OUTPUT
           echo "download-link=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
-          echo "✓ Found version: $TAG"
+          echo "[OK] Found version: $TAG"
 
   create-release:
     name: Create Release
@@ -52,17 +52,17 @@ jobs:
           body: |
             ## Aseprite ${{ needs.fetch-aseprite-info.outputs.release-tag }}
             
-            ### 📦 下载说明
-            - Windows 用户下载 `Aseprite-*-Windows.zip`
-            - Linux 用户下载 `Aseprite-*-Linux.zip`  
-            - macOS (Apple Silicon) 用户下载 `Aseprite-*-macOS.zip`
+            ### Download
+            - Windows: `Aseprite-*-Windows.zip`
+            - Linux: `Aseprite-*-Linux.zip`
+            - macOS (Apple Silicon): `Aseprite-*-macOS.zip`
             
-            ### 🔧 构建信息
-            - 构建时间: ${{ github.event.repository.updated_at }}
-            - 工作流: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            ### Build Info
+            - Build Time: ${{ github.event.repository.updated_at }}
+            - Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
             
-            ### 📝 更新说明
-            请查看 [Aseprite 官方 Release Notes](https://github.com/aseprite/aseprite/releases/tag/${{ needs.fetch-aseprite-info.outputs.release-tag }})
+            ### Release Notes
+            See [Aseprite Official Release Notes](https://github.com/aseprite/aseprite/releases/tag/${{ needs.fetch-aseprite-info.outputs.release-tag }})
           skipIfReleaseExists: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -129,9 +129,6 @@ jobs:
             --branch ${{ needs.fetch-aseprite-info.outputs.release-tag }} \
             https://github.com/${{ env.ASEPRITE_REPO }}
 
-      # ============================================================
-      # 使用 Python 修改版本号（使用 YAML 多行字符串语法）
-      # ============================================================
       - name: Set version number
         working-directory: aseprite
         shell: bash
@@ -141,18 +138,21 @@ jobs:
           echo "Setting version to: $CLEAN_VERSION"
           if [ -f "src/ver/CMakeLists.txt" ]; then
             python3 << 'EOF'
-          import re
-          with open('src/ver/CMakeLists.txt', 'r') as f:
-              content = f.read()
-          content = re.sub(r'set\(VERSION ".*"\)', 'set(VERSION "'"$CLEAN_VERSION"'")', content)
-          with open('src/ver/CMakeLists.txt', 'w') as f:
-              f.write(content)
-          print("✓ Modified src/ver/CMakeLists.txt")
-          EOF
+        import re
+        import sys
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+        with open('src/ver/CMakeLists.txt', 'r', encoding='utf-8') as f:
+            content = f.read()
+        content = re.sub(r'set\(VERSION ".*"\)', 'set(VERSION "' + "$CLEAN_VERSION" + '")', content)
+        with open('src/ver/CMakeLists.txt', 'w', encoding='utf-8') as f:
+            f.write(content)
+        print("[OK] Modified src/ver/CMakeLists.txt")
+        EOF
             echo "Version line after modification:"
-            grep "set(VERSION" src/ver/CMakeLists.txt || echo "⚠ Version line not found"
+            grep "set(VERSION" src/ver/CMakeLists.txt || echo "[WARN] Version line not found"
           else
-            echo "⚠ Warning: src/ver/CMakeLists.txt not found"
+            echo "[ERROR] src/ver/CMakeLists.txt not found"
             exit 1
           fi
           echo "clean_version=$CLEAN_VERSION" >> $GITHUB_OUTPUT
@@ -189,9 +189,9 @@ jobs:
             wget -q "$SKIA_URL"
             unzip -q *.zip -d skia
             rm *.zip
-            echo "✓ Skia downloaded"
+            echo "[OK] Skia downloaded"
           else
-            echo "✓ Skia cache hit"
+            echo "[OK] Skia cache hit"
           fi
 
       - uses: aseprite/get-ninja@main
@@ -252,10 +252,10 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            ./${{ matrix.exe_name }} --version || echo "⚠ Version check skipped"
+            ./${{ matrix.exe_name }} --version || echo "[WARN] Version check skipped"
           else
             chmod +x ./${{ matrix.exe_name }}
-            ./${{ matrix.exe_name }} --version || echo "⚠ Version check skipped"
+            ./${{ matrix.exe_name }} --version || echo "[WARN] Version check skipped"
           fi
 
       - name: Clean Up Build folder
@@ -301,7 +301,7 @@ jobs:
           PACKAGE_NAME="Aseprite-${VERSION}-${PLATFORM}"
           7z -tzip -mx=3 -mmt=4 a "${PACKAGE_NAME}.zip" *
           echo "package_name=${PACKAGE_NAME}.zip" >> $GITHUB_OUTPUT
-          echo "✓ Created: ${PACKAGE_NAME}.zip"
+          echo "[OK] Created: ${PACKAGE_NAME}.zip"
         id: package
 
       - name: Upload release asset
@@ -327,9 +327,9 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: 1,
-                body: `❌ **构建失败！**
-                - 平台: ${{ matrix.platform_name }}
-                - 版本: ${{ needs.fetch-aseprite-info.outputs.release-tag }}
-                - 请查看 [构建日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})`
+                body: `[FAIL] Build failed!
+                Platform: ${{ matrix.platform_name }}
+                Version: ${{ needs.fetch-aseprite-info.outputs.release-tag }}
+                Log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
               });
             }
